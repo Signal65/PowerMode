@@ -1,59 +1,46 @@
 # PowerMode
 
-![Windows 10 power flyout](https://snz04pap001files.storage.live.com/y4mZDCQLkTmNPjNizvLlH3t7VcJU4ubfekfsokuyjXTXXryUVGqOFRn81YvSkXAjlRs2fLUzPoWg96sdydaiPXIwxUDQcu6ogiBfeCAbxKI-V9bvqWp8MJh6GnOWDnRrKTrsUykzwwN62Eo7jyfDssl6uBCcbSg1FhzAqRvqzMfBrHkY2lB6_95Kqy3hQozGpnH?width=360&height=343&cropmode=none)
-
-This program allows you to adjust the Windows "power mode" from the command line.  (The power mode an also be adjusted from the taskbar power flyout in Windows 10, or from the Settings application on Windows 11.)
+This program allows you to adjust the Windows "power mode" from the command line, including setting AC (plugged in) and DC (battery) power modes independently.
 
 ## Requirements
 
- - Windows 10, version 1709 or later
- - .NET Framework 4.7.1 (should be be already installed on applicable versions of Windows)
+ - Windows 10, version 1709 or later (AC/DC independent modes require Windows 11)
+ - .NET 8.0 runtime
 
 ## Use
 
 From the command line:
 |Command|Result|
 |--|--|
-|`PowerMode.exe`|Report the current power mode|
-|`PowerMode.exe BetterBattery`|Set the system to "Better Battery" mode|
-|`PowerMode.exe BetterPerformance`|Set the system to "Better Performance" mode|
-|`PowerMode.exe BestPerformance`|Set the system to "Best Performance" mode|
-|`PowerMode.exe <GUID>`|Set the system to the power mode defined by the provided GUID|
+|`PowerMode.exe`|Report the current effective, AC, and DC power modes|
+|`PowerMode.exe <mode>`|Set the power mode|
+|`PowerMode.exe /ac <mode>`|Set the AC (plugged in) power mode|
+|`PowerMode.exe /dc <mode>`|Set the DC (battery) power mode|
+|`PowerMode.exe /ac <mode> /dc <mode>`|Set AC and DC power modes independently|
+|`PowerMode.exe <GUID>`|Set the power mode to a custom GUID|
 
-## Configuration
-The application is preconfigured with power mode GUIDs that apply to a standard, stock Windows 10 installation.  (The default GUIDs are specified [here](https://docs.microsoft.com/en-us/windows-hardware/customize/desktop/customize-power-slider).)  If the power modes are not being set appropriately, you may need to check and see what the GUIDs are supposed to be and update the configuration file accordingly.
+Available modes: `BestPowerEfficiency`, `Balanced`, `BestPerformance`
 
-To check the GUIDs, open `regedit` and navigate to the key:
-`HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes`
-
-Look at the values `ActiveOverlayAcPowerScheme` and `ActiveOverlayDcPowerScheme`, which report the current power mode setting for AC power and battery power, respectively.  Check what GUIDs appear in this value when the power slider is set to different positions, and update the file `PowerMode.exe.config` accordingly.
+The `/ac` and `/dc` flags can also be specified as `--ac`/`--dc` or `-ac`/`-dc`.
 
 ## How it works
 
-This program uses an undocumented Windows API method to change the Windows power mode.  To adjust the power mode in your own .NET application, include this PInvoke signature:
+When called with a single mode argument, the program uses `PowerSetActiveOverlayScheme` from `powrprof.dll` to set the active power overlay scheme.
 
-    [DllImportAttribute("powrprof.dll", EntryPoint = "PowerSetActiveOverlayScheme")]
-    private static extern uint PowerSetActiveOverlayScheme(Guid OverlaySchemeGuid);
+When called with `/ac` or `/dc` flags, the program uses the documented Windows APIs [`PowerSetUserConfiguredACPowerMode`](https://learn.microsoft.com/en-us/windows/win32/api/powrprof/nf-powrprof-powersetuserconfiguredacpowermode) and [`PowerSetUserConfiguredDCPowerMode`](https://learn.microsoft.com/en-us/windows/win32/api/powrprof/nf-powrprof-powersetuserconfigureddcpowermode) to set AC and DC power modes independently.
 
-Then make the call to adjust the power setting like this:
+When called with no arguments, the program reports the effective power mode along with the user-configured AC and DC modes using `PowerGetEffectiveOverlayScheme`, `PowerGetUserConfiguredACPowerMode`, and `PowerGetUserConfiguredDCPowerMode`.
 
-    PowerSetActiveOverlayScheme(new Guid("ded574b5-45a0-4f42-8737-46345c09c238"));
+All API methods return zero on success and non-zero on failure.
 
-The current power mode can be retrieved using either of these PInvoke methods:
+### Power mode GUIDs
 
-    [DllImportAttribute("powrprof.dll", EntryPoint = "PowerGetActualOverlayScheme")]
-    public static extern uint PowerGetActualOverlayScheme(out Guid ActualOverlayGuid);
-    
-    [DllImportAttribute("powrprof.dll", EntryPoint = "PowerGetEffectiveOverlayScheme")]
-    public static extern uint PowerGetEffectiveOverlayScheme(out Guid EffectiveOverlayGuid);
+|Mode|GUID|
+|--|--|
+|Best Power Efficiency|`961cc777-2547-4f9d-8174-7d86181b8a7a`|
+|Balanced|`00000000-0000-0000-0000-000000000000`|
+|Best Performance|`ded574b5-45a0-4f42-8737-46345c09c238`|
 
-(I do not know what the difference between them is supposed to be; they each returned the same value every time during my testing.)  Calling the methods looks like:
+## Building
 
-    if (PowerGetEffectiveOverlayScheme(out Guid activeScheme) == 0)
-    {
-        Console.WriteLine(activeScheme);
-    }
-
-All of these methods return zero on success and non-zero on failure.
-
-There is one other relevant method in `powrprof.dll` called `PowerGetOverlaySchemes`, which I presume would allow you to retrieve all of the available power modes and GUIDs.  It appears to take three parameters, and I have not taken the time to figure out how it works.
+Run `build.bat` to compile and produce a zip file for distribution. Requires the .NET 8.0 SDK.
