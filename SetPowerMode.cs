@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace PowerMode
 {
@@ -21,31 +23,33 @@ namespace PowerMode
                 // Read from App.config.
                 ReadConfig();
 
-                if (args.Length == 0)
+                // The --json (also -json / /json) flag switches the report
+                // (no-mode) invocation to machine-readable output. Strip it out;
+                // everything that remains is positional.
+                bool jsonOutput = false;
+                List<string> positional = new List<string>();
+                foreach (string arg in args)
                 {
-                    // Report the current power modes.
-                    uint result = PowerGetEffectiveOverlayScheme(out Guid effectiveMode);
-                    if (result != 0)
+                    string lower = arg.ToLower();
+                    if (lower == "--json" || lower == "-json" || lower == "/json")
                     {
-                        return (int)result;
+                        jsonOutput = true;
                     }
-
-                    Console.WriteLine("Effective: {0} ({1})", FormatPowerMode(effectiveMode), effectiveMode);
-
-                    if (PowerGetUserConfiguredACPowerMode(out Guid acMode) == 0)
+                    else
                     {
-                        Console.WriteLine("AC:        {0} ({1})", FormatPowerMode(acMode), acMode);
-                    }
-
-                    if (PowerGetUserConfiguredDCPowerMode(out Guid dcMode) == 0)
-                    {
-                        Console.WriteLine("DC:        {0} ({1})", FormatPowerMode(dcMode), dcMode);
+                        positional.Add(arg);
                     }
                 }
-                else if (args.Length == 1)
+
+                if (positional.Count == 0)
+                {
+                    // Report the current power modes.
+                    return Report(jsonOutput);
+                }
+                else if (positional.Count == 1)
                 {
                     // Attempt to set the power mode (both AC and DC).
-                    string parameter = args[0].ToLower();
+                    string parameter = positional[0].ToLower();
 
                     if (parameter == "/?" || parameter == "-?")
                     {
@@ -74,21 +78,21 @@ namespace PowerMode
                     Guid? acMode = null;
                     Guid? dcMode = null;
 
-                    for (int i = 0; i < args.Length; i++)
+                    for (int i = 0; i < positional.Count; i++)
                     {
-                        string flag = args[i].ToLower();
+                        string flag = positional[i].ToLower();
 
-                        if ((flag == "/ac" || flag == "-ac" || flag == "--ac") && i + 1 < args.Length)
+                        if ((flag == "/ac" || flag == "-ac" || flag == "--ac") && i + 1 < positional.Count)
                         {
-                            acMode = ParsePowerMode(args[++i].ToLower());
+                            acMode = ParsePowerMode(positional[++i].ToLower());
                         }
-                        else if ((flag == "/dc" || flag == "-dc" || flag == "--dc") && i + 1 < args.Length)
+                        else if ((flag == "/dc" || flag == "-dc" || flag == "--dc") && i + 1 < positional.Count)
                         {
-                            dcMode = ParsePowerMode(args[++i].ToLower());
+                            dcMode = ParsePowerMode(positional[++i].ToLower());
                         }
                         else
                         {
-                            Console.Error.WriteLine("Unrecognized argument: {0}\n", args[i]);
+                            Console.Error.WriteLine("Unrecognized argument: {0}\n", positional[i]);
                             Usage();
                             return 1;
                         }
@@ -146,6 +150,79 @@ namespace PowerMode
         }
 
         /// <summary>
+        /// Report the current effective, AC, and DC power modes, either as
+        /// human-readable lines or as a single line of JSON.
+        /// </summary>
+        /// <param name="json">When true, emit machine-readable JSON instead of text.</param>
+        /// <returns>Zero on success; the non-zero API error from reading the effective mode otherwise.</returns>
+        private static int Report(bool json)
+        {
+            uint result = PowerGetEffectiveOverlayScheme(out Guid effectiveMode);
+            if (result != 0)
+            {
+                return (int)result;
+            }
+
+            bool haveAc = PowerGetUserConfiguredACPowerMode(out Guid acMode) == 0;
+            bool haveDc = PowerGetUserConfiguredDCPowerMode(out Guid dcMode) == 0;
+
+            if (json)
+            {
+                // Stable shape for automated consumers (e.g. QuasarBenchRunner):
+                // { "effective": {"name","guid"}, "ac": {...}|null, "dc": {...}|null }
+                Dictionary<string, object> report = new Dictionary<string, object>
+                {
+                    ["effective"] = ModeReport(effectiveMode),
+                    ["ac"] = haveAc ? ModeReport(acMode) : null,
+                    ["dc"] = haveDc ? ModeReport(dcMode) : null,
+                };
+
+                Console.WriteLine(JsonSerializer.Serialize(report));
+            }
+            else
+            {
+                Console.WriteLine("Effective: {0} ({1})", FormatPowerMode(effectiveMode), effectiveMode);
+
+                if (haveAc)
+                {
+                    Console.WriteLine("AC:        {0} ({1})", FormatPowerMode(acMode), acMode);
+                }
+
+                if (haveDc)
+                {
+                    Console.WriteLine("DC:        {0} ({1})", FormatPowerMode(dcMode), dcMode);
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Build the per-mode object used in JSON report output: a canonical token
+        /// name plus the raw GUID.
+        /// </summary>
+        private static Dictionary<string, string> ModeReport(Guid mode)
+        {
+            return new Dictionary<string, string>
+            {
+                ["name"] = ModeToken(mode),
+                ["guid"] = mode.ToString(),
+            };
+        }
+
+        /// <summary>
+        /// Map a power mode GUID to the canonical token accepted on the command line
+        /// (BestPowerEfficiency / Balanced / BestPerformance), or "Unknown".
+        /// </summary>
+        private static string ModeToken(Guid mode)
+        {
+            if (mode == PowerMode.BestPowerEfficiency) return "BestPowerEfficiency";
+            if (mode == PowerMode.Balanced) return "Balanced";
+            if (mode == PowerMode.BestPerformance) return "BestPerformance";
+            return "Unknown";
+        }
+
+        /// <summary>
         /// Format a power mode GUID as a friendly name, if known.
         /// </summary>
         private static string FormatPowerMode(Guid mode)
@@ -198,6 +275,7 @@ namespace PowerMode
                     "https://github.com/AaronKelley/PowerMode\n" +
                     "\n" +
                     "  PowerMode                              Report the current power mode\n" +
+                    "  PowerMode --json                       Report the current power mode as JSON\n" +
                     "  PowerMode <mode>                       Set the power mode (both AC and DC)\n" +
                     "  PowerMode /ac <mode>                   Set the AC (plugged in) power mode\n" +
                     "  PowerMode /dc <mode>                   Set the DC (battery) power mode\n" +
