@@ -150,8 +150,9 @@ namespace PowerMode
         }
 
         /// <summary>
-        /// Report the current effective, AC, and DC power modes, either as
-        /// human-readable lines or as a single line of JSON.
+        /// Report the current power mode. As human-readable text this lists the
+        /// effective, AC, and DC modes; as JSON it emits a single flat object for
+        /// the currently-effective mode only.
         /// </summary>
         /// <param name="json">When true, emit machine-readable JSON instead of text.</param>
         /// <returns>Zero on success; the non-zero API error from reading the effective mode otherwise.</returns>
@@ -163,35 +164,25 @@ namespace PowerMode
                 return (int)result;
             }
 
-            bool haveAc = PowerGetUserConfiguredACPowerMode(out Guid acMode) == 0;
-            bool haveDc = PowerGetUserConfiguredDCPowerMode(out Guid dcMode) == 0;
-
             if (json)
             {
-                // Stable shape for automated consumers (e.g. QuasarBenchRunner):
-                // { "effective": {"name","guid"}, "ac": {...}|null, "dc": {...}|null }
-                Dictionary<string, object> report = new Dictionary<string, object>
-                {
-                    ["effective"] = ModeReport(effectiveMode),
-                    ["ac"] = haveAc ? ModeReport(acMode) : null,
-                    ["dc"] = haveDc ? ModeReport(dcMode) : null,
-                };
-
-                Console.WriteLine(JsonSerializer.Serialize(report));
+                // Flat, single-mode shape for automated consumers (e.g. QuasarBenchRunner):
+                // {"name":"Balanced","guid":"..."}
+                Console.WriteLine(JsonSerializer.Serialize(ModeReport(effectiveMode)));
+                return 0;
             }
-            else
+
+            // Human-readable text path: also report the user-configured AC and DC modes.
+            Console.WriteLine("Effective: {0} ({1})", FormatPowerMode(effectiveMode), effectiveMode);
+
+            if (PowerGetUserConfiguredACPowerMode(out Guid acMode) == 0)
             {
-                Console.WriteLine("Effective: {0} ({1})", FormatPowerMode(effectiveMode), effectiveMode);
+                Console.WriteLine("AC:        {0} ({1})", FormatPowerMode(acMode), acMode);
+            }
 
-                if (haveAc)
-                {
-                    Console.WriteLine("AC:        {0} ({1})", FormatPowerMode(acMode), acMode);
-                }
-
-                if (haveDc)
-                {
-                    Console.WriteLine("DC:        {0} ({1})", FormatPowerMode(dcMode), dcMode);
-                }
+            if (PowerGetUserConfiguredDCPowerMode(out Guid dcMode) == 0)
+            {
+                Console.WriteLine("DC:        {0} ({1})", FormatPowerMode(dcMode), dcMode);
             }
 
             return 0;

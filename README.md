@@ -13,7 +13,7 @@ From the command line:
 |Command|Result|
 |--|--|
 |`PowerMode.exe`|Report the current effective, AC, and DC power modes|
-|`PowerMode.exe --json`|Report the current modes as a single line of JSON (for scripts/automation)|
+|`PowerMode.exe --json`|Report the current effective mode as a single line of JSON (for scripts/automation)|
 |`PowerMode.exe <mode>`|Set the power mode|
 |`PowerMode.exe /ac <mode>`|Set the AC (plugged in) power mode|
 |`PowerMode.exe /dc <mode>`|Set the DC (battery) power mode|
@@ -32,13 +32,13 @@ When called with `/ac` or `/dc` flags, the program uses the documented Windows A
 
 When called with no arguments, the program reports the effective power mode along with the user-configured AC and DC modes using `PowerGetEffectiveOverlayScheme`, `PowerGetUserConfiguredACPowerMode`, and `PowerGetUserConfiguredDCPowerMode`.
 
-Adding `--json` (also `-json` or `/json`) to the report invocation emits a single line of machine-readable JSON instead of the human-readable lines, for use by scripts and automation:
+Adding `--json` (also `-json` or `/json`) to the report invocation emits a single line of machine-readable JSON for the currently-effective power mode instead of the human-readable lines, for use by scripts and automation:
 
 ```json
-{"effective":{"name":"BestPerformance","guid":"ded574b5-45a0-4f42-8737-46345c09c238"},"ac":{"name":"Balanced","guid":"00000000-0000-0000-0000-000000000000"},"dc":{"name":"BestPowerEfficiency","guid":"961cc777-2547-4f9d-8174-7d86181b8a7a"}}
+{"name":"BestPerformance","guid":"ded574b5-45a0-4f42-8737-46345c09c238"}
 ```
 
-`name` is the canonical mode token (`BestPowerEfficiency`, `Balanced`, `BestPerformance`, or `Unknown`); `guid` is the raw scheme GUID. `ac` and `dc` are `null` if the OS does not report a user-configured mode for that rail. The flag only affects the report (no-mode) invocation.
+`name` is the canonical mode token (`BestPowerEfficiency`, `Balanced`, `BestPerformance`, or `Unknown`); `guid` is the raw scheme GUID. The flag only affects the report (no-mode) invocation.
 
 All API methods return zero on success and non-zero on failure.
 
